@@ -1,3 +1,6 @@
+// converting hack assembly lang to hack machine lang
+// コンピュータシステムの理論と実装 §6
+
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -17,9 +20,6 @@ fn main() {
         Err(why) => panic!("couldn't open {}: {}", path.display(), why),
         Ok(file) => file,
     };
-//    let mut buf_reader = BufReader::new(asmfile);
-//    let mut contents = String::new();
-//    buf_reader.read_to_string(&mut contents).unwrap();
 
     // convert foo.asm to binary
     let asm_mid_code = MidAsmCode::asm_to_midcode(&asmfile);
