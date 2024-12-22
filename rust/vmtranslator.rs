@@ -31,16 +31,16 @@ fn main() {
         Err(why) => panic!("couldn't create {}: {}", new_path.display(), why),
         Ok(file) => file,
     };
-    writeln!(asmfile, "{}", asm_string);
+    writeln!(asmfile, "{}", asm_string).expect("couldn't write to file");
 }
 
 fn vm_to_asm(file: &File, filename: &str) -> String {
     let mut asm_string = "".to_string();
-    let mut conditional_branch_count = 0;
+    let mut eq_gt_lt_count = 0;
 
     for (row_num, line) in BufReader::new(file).lines().enumerate() {
         let unwraped_line = line.unwrap();
-        let line_vec: Vec<&str> = unwraped_line.trim().split(' ').collect();
+        let line_vec: Vec<&str> = unwraped_line.trim().split_whitespace().collect();
 
         if line_vec.len() > 0 {
             let line_length = line_vec[0].chars().count();
@@ -59,20 +59,22 @@ fn vm_to_asm(file: &File, filename: &str) -> String {
             } else if line_vec[0] == "neg" {
                 asm_string += "// neg\n@SP\nA=M-1\nM=-M\n";
             } else if line_vec[0] == "eq" {
-                asm_string += &format!("// eq\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@EQ{}TRUE\nD;JEQ\n@SP\nA=M-1\nM=0\n@EQ{}RESULT\n0;JMP\n(EQ{}TRUE)\n@SP\nA=M-1\nM=-1\n(EQ{}RESULT)\n", conditional_branch_count, conditional_branch_count, conditional_branch_count, conditional_branch_count);
-                conditional_branch_count += 1;
+                asm_string += &format!("// eq\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@EQ{}TRUE\nD;JEQ\n@SP\nA=M-1\nM=0\n@EQ{}RESULT\n0;JMP\n(EQ{}TRUE)\n@SP\nA=M-1\nM=-1\n(EQ{}RESULT)\n", eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count);
+                eq_gt_lt_count += 1;
             } else if line_vec[0] == "gt" {
-                asm_string += &format!("// gt\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@GT{}TRUE\nD;JGT\n@SP\nA=M-1\nM=0\n@GT{}RESULT\n0;JMP\n(GT{}TRUE)\n@SP\nA=M-1\nM=-1\n(GT{}RESULT)\n", conditional_branch_count, conditional_branch_count, conditional_branch_count, conditional_branch_count);
-                conditional_branch_count += 1;
+                asm_string += &format!("// gt\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@GT{}TRUE\nD;JGT\n@SP\nA=M-1\nM=0\n@GT{}RESULT\n0;JMP\n(GT{}TRUE)\n@SP\nA=M-1\nM=-1\n(GT{}RESULT)\n", eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count);
+                eq_gt_lt_count += 1;
             } else if line_vec[0] == "lt" {
-                asm_string += &format!("// lt\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@LT{}TRUE\nD;JLT\n@SP\nA=M-1\nM=0\n@LT{}RESULT\n0;JMP\n(LT{}TRUE)\n@SP\nA=M-1\nM=-1\n(LT{}RESULT)\n", conditional_branch_count, conditional_branch_count, conditional_branch_count, conditional_branch_count);
-                conditional_branch_count += 1;
+                asm_string += &format!("// lt\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D-M\n@LT{}TRUE\nD;JLT\n@SP\nA=M-1\nM=0\n@LT{}RESULT\n0;JMP\n(LT{}TRUE)\n@SP\nA=M-1\nM=-1\n(LT{}RESULT)\n", eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count, eq_gt_lt_count);
+                eq_gt_lt_count += 1;
             } else if line_vec[0] == "and" {
                 asm_string += "// and\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D&M\n@SP\nA=M-1\nM=D\n";
             } else if line_vec[0] == "or" {
                 asm_string += "// or\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D|M\n@SP\nA=M-1\nM=D\n";
             } else if line_vec[0] == "not" {
                 asm_string += "// not\n@SP\nA=M-1\nM=!M\n";
+            } else if line_vec[0] == "label" || line_vec[0] == "goto" || line_vec[0] == "if-goto" {
+                asm_string += &conditional_branch_to_asm(line_vec, row_num);
             } else {
                 panic!("syntax error: in line {}", row_num);
             }
@@ -80,6 +82,7 @@ fn vm_to_asm(file: &File, filename: &str) -> String {
     }
     // infinite loop code at end of program 
     asm_string += "// end\n(ENDLOOP)\n@ENDLOOP\n0;JMP\n";
+    
     return asm_string;
 }
 
@@ -181,6 +184,35 @@ fn push_or_pop_to_asm(args: Vec<&str>, filename: &str, row_num: usize) -> String
         } else {
             panic!("syntax error: in line {}", row_num);
         }
+    } else {
+        panic!("syntax error: in line {}", row_num);
+    }
+}
+
+fn conditional_branch_to_asm(args: Vec<&str>, row_num: usize) -> String {
+    let words_num = args.len();
+    if words_num < 2 {
+        panic!("syntax error: in line {}", row_num);
+    } else if words_num > 2 {
+        if args[2].chars().count() < 2 {
+            eprintln!("warning: meaningless vm_code was skipped: in line {}", row_num);
+        } else if !(args[2].chars().nth(0).unwrap() == '/' && args[2].chars().nth(1).unwrap() == '/') {
+            eprintln!("warning: meaningless vm_code was skipped: in line {}", row_num);
+        }
+    }
+
+    // label is not number
+    let label = match args[1].parse::<i64>() {
+        Ok(_) => panic!("syntax error: in line {}", row_num),
+        Err(_) => args[1],
+    };
+
+    if args[0] == "label" {
+        return format!("({}) // label\n", label);
+    } else if args[0] == "goto" {
+        return format!("@{} // goto\n0;JMP\n", label);
+    } else if args[0] == "if-goto" {
+        return format!("// if-goto\n@SP\nAM=M-1\nD=M\n@{}\nD;JNE\n", label);
     } else {
         panic!("syntax error: in line {}", row_num);
     }
