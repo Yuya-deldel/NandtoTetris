@@ -1,5 +1,5 @@
 // converting VM to hack assembly lang
-// コンピュータシステムの理論と実装 §7,8
+// コンピュータシステムの理論と実装 §7,8: boot strap code の手前まで
 
 use std::env;
 use std::fs::File;
@@ -10,12 +10,12 @@ fn main() {
     // get path from command line
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        panic!("input path: ./vmtranslator path/to/dir");
+        panic!("input path: ./vmtranslator_basic path/to/foo.vm");
     }
     let path = PathBuf::from(&args[1]);
 
-    // convert foo.vm files in path folder to assembly lang 
-    let asm_string = vmfiles_to_asm(&path);
+    // convert foo.vm to assembly lang
+    let asm_string = vm_to_asm(&path);
 
     // write assembly lang into file
     let mut new_path = path.clone();
@@ -27,42 +27,15 @@ fn main() {
     writeln!(asmfile, "{}", asm_string).expect("couldn't write to file");
 }
 
-fn vmfiles_to_asm(path: &PathBuf) -> String {
-    let mut eq_gt_lt_count = 0;
-    let mut return_address_count = 0;
-
-    // boot strap code: set SP,LCL,ARG and call Sys.init
-    let mut asm_string = "// boot strap code\n@256\nD=A\n@SP\nM=D\n@ARG\nM=D\n@5\nD=A\n@SP\nDM=D+M\n@LCL\nM=D\n@Sys.init\n0;JMP\n".to_string();
-    
-    // open directory 
-    let directory = match path.read_dir() {
-        Err(why) => panic!("couldn't open directory {}: {}", path.display(), why),
-        Ok(dir) => dir,
-    };
-    for dir_entry in directory {
-        if let Ok(entry) = dir_entry {
-            let path_of_entry = entry.path();
-            if let Some(extension) = path_of_entry.extension() {
-                if extension == "vm" {
-                    // converting .vm files to asm code
-                    asm_string += &vm_to_asm(&path_of_entry, &mut eq_gt_lt_count, &mut return_address_count);
-                }
-            }
-        } else {
-            eprintln!("warning: couldn't access to some entry in {}", path.display());
-            continue;
-        }
-    }
-    return asm_string;
-}
-
-fn vm_to_asm(path: &PathBuf, eq_gt_lt_count: &mut usize, return_address_count: &mut usize) -> String {
+fn vm_to_asm(path: &PathBuf) -> String {
     let filename = path.file_name().expect("error: invalid filename").to_str().expect("error: invalid filename");
     let vmfile = match File::open(&path) {
         Err(why) => panic!("couldn't open {}: {}", path.display(), why),
         Ok(file) => file,
     };
 
+    let mut eq_gt_lt_count = 0;
+    let mut return_address_count = 0;
     let mut asm_string = "".to_string();
     for (row_num, line) in BufReader::new(vmfile).lines().enumerate() {
         let unwraped_line = line.unwrap();
@@ -85,7 +58,7 @@ fn vm_to_asm(path: &PathBuf, eq_gt_lt_count: &mut usize, return_address_count: &
             } else if line_vec[0] == "neg" {
                 asm_string += "// neg\n@SP\nA=M-1\nM=-M\n";
             } else if line_vec[0] == "eq" || line_vec[0] == "gt" || line_vec[0] == "lt" {
-                asm_string += &eq_gt_lt_to_asm(line_vec[0], eq_gt_lt_count);
+                asm_string += &eq_gt_lt_to_asm(line_vec[0], &mut eq_gt_lt_count);
             } else if line_vec[0] == "and" {
                 asm_string += "// and\n@SP\nAM=M-1\nD=M\n@R13\nM=D\n@SP\nA=M-1\nD=M\n@R13\nD=D&M\n@SP\nA=M-1\nM=D\n";
             } else if line_vec[0] == "or" {
@@ -95,7 +68,7 @@ fn vm_to_asm(path: &PathBuf, eq_gt_lt_count: &mut usize, return_address_count: &
             } else if line_vec[0] == "label" || line_vec[0] == "goto" || line_vec[0] == "if-goto" {
                 asm_string += &conditional_branch_to_asm(line_vec, filename, row_num);
             } else if line_vec[0] == "call" || line_vec[0] == "function" {
-                asm_string += &function_to_asm(line_vec, filename, return_address_count, row_num);
+                asm_string += &function_to_asm(line_vec, filename, &mut return_address_count, row_num);
             } else if line_vec[0] == "return" {
                 asm_string += &return_to_asm();
             } else {
@@ -103,6 +76,9 @@ fn vm_to_asm(path: &PathBuf, eq_gt_lt_count: &mut usize, return_address_count: &
             }
         }
     }
+    // infinite loop code at end of program 
+    asm_string += "// end\n(ENDLOOP)\n@ENDLOOP\n0;JMP\n";
+    
     return asm_string;
 }
 
